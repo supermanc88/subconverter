@@ -67,6 +67,11 @@ std::string vmessConstruct(std::string add, std::string port, std::string type, 
         path = "/";
     if(!host.size())
         host = add;
+    if(!id.size())
+        id = "00000000-0000-0000-0000-000000000000"; //fill this field for node with empty id
+    host = trim(host);
+    path = trim(path);
+
     rapidjson::StringBuffer sb;
     rapidjson::Writer<rapidjson::StringBuffer> writer(sb);
     writer.StartObject();
@@ -311,9 +316,12 @@ void rulesetToClash(YAML::Node &base_rule, std::vector<ruleset_content> &ruleset
         if(retrived_rules.find("[]") == 0)
         {
             strLine = retrived_rules.substr(2);
-            if(strLine == "FINAL")
-                strLine = "MATCH";
-            allRules.emplace_back(strLine + "," + rule_group);
+            if(strLine.find("FINAL") == 0)
+                strLine.replace(0, 5, "MATCH");
+            strLine += "," + rule_group;
+            if(std::count(strLine.begin(), strLine.end(), ',') > 2)
+                strLine = regReplace(strLine, "^(.*?,.*?)(,.*)(,.*)$", "$1$3$2");
+            allRules.emplace_back(strLine);
             continue;
         }
         char delimiter = count(retrived_rules.begin(), retrived_rules.end(), '\n') < 1 ? '\r' : '\n';
@@ -1268,12 +1276,12 @@ std::string netchToQuan(std::vector<nodeInfo> &nodes, extra_settings &ext)
             if(method == "auto")
                 method = "chacha20-ietf-poly1305";
             proxyStr = remark + " = vmess, " + hostname + ", " + port + ", " + method + ", \"" + id + "\", group=" + x.group;
-            if(transproto == "ws")
-                proxyStr += ", obfs=ws, obfs-path=" + path + ", obfs-header=\"Host: " + host + "\"";
             if(tlssecure)
                 proxyStr += ", over-tls=true, tls-host=" + host;
             if(ext.skip_cert_verify)
                 proxyStr += ", certificate=0";
+            if(transproto == "ws")
+                proxyStr += ", obfs=ws, obfs-path=\"" + path + "\", obfs-header=\"Host: " + host + "\"";
             proxyStr = "vmess://" + urlsafe_base64_encode(proxyStr);
             break;
         case SPEEDTEST_MESSAGE_FOUNDSSR:
@@ -1314,6 +1322,7 @@ std::string netchToQuanX(std::vector<nodeInfo> &nodes, extra_settings &ext)
     std::string id, transproto, host, path;
     std::string protocol, protoparam, obfs, obfsparam;
     std::string proxyStr, allLinks;
+    bool tlssecure;
 
     std::for_each(nodes.begin(), nodes.end(), [ext](nodeInfo &x)
     {
@@ -1353,11 +1362,14 @@ std::string netchToQuanX(std::vector<nodeInfo> &nodes, extra_settings &ext)
             transproto = GetMember(json, "TransferProtocol");
             host = GetMember(json, "Host");
             path = GetMember(json, "Path");
+            tlssecure = GetMember(json, "TLSSecure") == "true";
             if(method == "auto")
                 method = "chacha20-ietf-poly1305";
             proxyStr = "vmess = " + hostname + ":" + port + ", method=" + method + ", password=" + id;
             if(transproto == "ws")
                 proxyStr += ", obfs=ws, obfs-host=" + host + ", obfs-uri=" + path;
+            else if(tlssecure)
+                proxyStr += ", obfs=over-tls";
             if(ext.skip_cert_verify)
                 proxyStr += ", certificate=0";
             break;
